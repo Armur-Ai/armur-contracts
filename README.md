@@ -20,3 +20,25 @@ products (Pentest Swarm, Akira, Hayagriva, Engira, Trishul, Dhantra).
 
 ## Design rules
 Additive versioning · trust/receipt semantics (declared vs adjudicated vs runtime-confirmed stay distinct; no bare `fixed=true`) · three equivalent transports · no shared writable DB.
+
+## Transports
+
+A record (`Envelope`) is exchanged through an `Adapter`. Three implementations
+ship, and all pass the shared `conformance` suite — so a product can be embedded
+in-process, hand off via a directory, or talk over the network with identical
+semantics (idempotency on content `Digest`, `ErrAbsentPeer` on a missing ref,
+capability negotiation):
+
+| Adapter | Package | Use |
+|---|---|---|
+| in-process | `adapter/inproc` | embedding one product inside another; tests/fixtures |
+| file | `adapter/file` | durable, offline hand-off (drop a JSON record in a directory) |
+| HTTP | `adapter/http` | networked exchange (`Client` ↔ `Handler`) |
+
+```go
+store := inproc.New(contracts.NSHayagriva, "DiscoveryBundle")
+rec, _ := store.Submit(ctx, env)      // idempotent on Digest(env)
+got, _ := store.Fetch(ctx, rec.JobRef)
+```
+
+New adapters must pass `conformance.RunAdapterSuite` to be considered conformant.
