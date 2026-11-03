@@ -6,9 +6,6 @@ package inproc
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"sync"
 	"time"
 
@@ -37,18 +34,6 @@ func New(ns contracts.Namespace, kinds ...string) *Adapter {
 	}
 }
 
-func digest(env contracts.Envelope) string {
-	// Digest over the stable identity of the record: producer + kind + payload.
-	h := sha256.New()
-	h.Write([]byte(env.Producer.Product))
-	h.Write([]byte{0})
-	h.Write([]byte(env.Kind))
-	h.Write([]byte{0})
-	b, _ := json.Marshal(env.Payload)
-	h.Write(b)
-	return hex.EncodeToString(h.Sum(nil))
-}
-
 // Submit stores the envelope and returns a durable receipt, idempotently.
 func (a *Adapter) Submit(ctx context.Context, env contracts.Envelope) (contracts.Receipt, error) {
 	if err := ctx.Err(); err != nil {
@@ -57,7 +42,7 @@ func (a *Adapter) Submit(ctx context.Context, env contracts.Envelope) (contracts
 	if len(a.kinds) > 0 && !contains(a.kinds, env.Kind) {
 		return contracts.Receipt{}, contracts.ErrUnsupportedKind
 	}
-	dig := digest(env)
+	dig := contracts.Digest(env)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if r, ok := a.byDigin[dig]; ok {
