@@ -23,6 +23,9 @@ const (
 	ProblemBadExploitability ProblemKind = "bad_exploitability" // outside [0,1]
 	ProblemDanglingStep      ProblemKind = "dangling_step"      // path step references no edge
 	ProblemEmptyObjective    ProblemKind = "empty_objective"
+	ProblemEmptyValue        ProblemKind = "empty_value"    // a discovery component carries no value
+	ProblemEmptyObserver     ProblemKind = "empty_observer" // a component names no collector
+	ProblemDuplicateRef      ProblemKind = "duplicate_ref"  // two components share a ref
 )
 
 // Problem is one structural issue found in a record.
@@ -99,11 +102,46 @@ func ValidateSnapshot(s AssessmentSnapshot) []Problem {
 	return problems
 }
 
-// Validate returns nil when the snapshot is structurally sound, else an error
-// summarising the problems — the convenient one-call form for a consumer that
-// just wants to reject a malformed snapshot.
-func (s AssessmentSnapshot) Validate() error {
-	problems := ValidateSnapshot(s)
+// ValidateDiscoveryBundle checks a DiscoveryBundle for structural soundness and
+// returns every problem it finds (empty when sound). A consumer (e.g. the swarm
+// warm-start seam) runs it before trusting imported discovery:
+//   - every component carries a value and names the collector that observed it;
+//   - component refs, when present, are unique.
+//
+// It does not police the kind vocabulary — producers add component kinds over
+// time, and an unknown kind is forward-compatible, not an error.
+func ValidateDiscoveryBundle(b DiscoveryBundle) []Problem {
+	var problems []Problem
+	refs := make(map[string]bool, len(b.Components))
+	for i, c := range b.Components {
+		where := c.Ref
+		if where == "" {
+			where = fmt.Sprintf("components[%d]", i)
+		}
+		if strings.TrimSpace(c.Value) == "" {
+			problems = append(problems, Problem{Kind: ProblemEmptyValue, Ref: where, Detail: "component has an empty value"})
+		}
+		if strings.TrimSpace(c.ObservedBy) == "" {
+			problems = append(problems, Problem{Kind: ProblemEmptyObserver, Ref: where, Detail: "component names no observing collector"})
+		}
+		if c.Ref != "" {
+			if refs[c.Ref] {
+				problems = append(problems, Problem{Kind: ProblemDuplicateRef, Ref: c.Ref, Detail: "component ref appears more than once"})
+			}
+			refs[c.Ref] = true
+		}
+	}
+	return problems
+}
+
+// Validate returns nil when the bundle is structurally sound, else an error
+// summarising the problems.
+func (b DiscoveryBundle) Validate() error {
+	return problemsError("DiscoveryBundle", ValidateDiscoveryBundle(b))
+}
+
+// problemsError renders a problem list as a single error (nil when empty).
+func problemsError(kind string, problems []Problem) error {
 	if len(problems) == 0 {
 		return nil
 	}
@@ -111,5 +149,12 @@ func (s AssessmentSnapshot) Validate() error {
 	for i, p := range problems {
 		parts[i] = p.String()
 	}
-	return fmt.Errorf("invalid AssessmentSnapshot (%d problem(s)): %s", len(problems), strings.Join(parts, "; "))
+	return fmt.Errorf("invalid %s (%d problem(s)): %s", kind, len(problems), strings.Join(parts, "; "))
+}
+
+// Validate returns nil when the snapshot is structurally sound, else an error
+// summarising the problems — the convenient one-call form for a consumer that
+// just wants to reject a malformed snapshot.
+func (s AssessmentSnapshot) Validate() error {
+	return problemsError("AssessmentSnapshot", ValidateSnapshot(s))
 }

@@ -64,7 +64,7 @@ func TestValidateSnapshot_DanglingStep(t *testing.T) {
 
 func TestValidateSnapshot_DuplicatesAndBadWeight(t *testing.T) {
 	s := soundSnapshot()
-	s.Nodes = append(s.Nodes, GraphNode{ID: "a", Type: "service"}) // dup node id
+	s.Nodes = append(s.Nodes, GraphNode{ID: "a", Type: "service"})             // dup node id
 	s.Edges = append(s.Edges, GraphEdge{ID: "e1", From: "a", To: "objective"}) // dup edge id
 	s.Edges[0].Exploitability = 1.5                                            // out of range
 	kinds := map[ProblemKind]bool{}
@@ -90,5 +90,37 @@ func TestValidateSnapshot_EmptyObjective(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("blank objective should be flagged, got %v", problems)
+	}
+}
+
+func TestValidateDiscoveryBundle(t *testing.T) {
+	good := DiscoveryBundle{
+		BundleID: "b1",
+		Components: []ComponentObservation{
+			{Ref: "httpx:https://a/x", Kind: "endpoint", Value: "https://a/x", ObservedBy: "httpx-import"},
+		},
+	}
+	if err := good.Validate(); err != nil {
+		t.Fatalf("sound bundle should validate: %v", err)
+	}
+
+	bad := DiscoveryBundle{
+		Components: []ComponentObservation{
+			{Ref: "r1", Kind: "endpoint", Value: "", ObservedBy: "x"},          // empty value
+			{Ref: "r2", Kind: "endpoint", Value: "https://a", ObservedBy: ""},  // no observer
+			{Ref: "r1", Kind: "endpoint", Value: "https://b", ObservedBy: "x"}, // dup ref r1
+		},
+	}
+	kinds := map[ProblemKind]bool{}
+	for _, p := range ValidateDiscoveryBundle(bad) {
+		kinds[p.Kind] = true
+	}
+	for _, want := range []ProblemKind{ProblemEmptyValue, ProblemEmptyObserver, ProblemDuplicateRef} {
+		if !kinds[want] {
+			t.Errorf("expected a %s problem; got %v", want, kinds)
+		}
+	}
+	if bad.Validate() == nil {
+		t.Error("Validate() must return an error for the malformed bundle")
 	}
 }
