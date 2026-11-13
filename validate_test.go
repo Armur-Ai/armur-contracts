@@ -107,7 +107,6 @@ func TestValidateDiscoveryBundle(t *testing.T) {
 	bad := DiscoveryBundle{
 		Components: []ComponentObservation{
 			{Ref: "r1", Kind: "endpoint", Value: "", ObservedBy: "x"},          // empty value
-			{Ref: "r2", Kind: "endpoint", Value: "https://a", ObservedBy: ""},  // no observer
 			{Ref: "r1", Kind: "endpoint", Value: "https://b", ObservedBy: "x"}, // dup ref r1
 		},
 	}
@@ -115,10 +114,17 @@ func TestValidateDiscoveryBundle(t *testing.T) {
 	for _, p := range ValidateDiscoveryBundle(bad) {
 		kinds[p.Kind] = true
 	}
-	for _, want := range []ProblemKind{ProblemEmptyValue, ProblemEmptyObserver, ProblemDuplicateRef} {
+	for _, want := range []ProblemKind{ProblemEmptyValue, ProblemDuplicateRef} {
 		if !kinds[want] {
 			t.Errorf("expected a %s problem; got %v", want, kinds)
 		}
+	}
+	// A missing ObservedBy is provenance-only and must NOT fail the gate.
+	okMissingObserver := DiscoveryBundle{Components: []ComponentObservation{
+		{Ref: "r9", Kind: "endpoint", Value: "https://a", ObservedBy: ""},
+	}}
+	if err := okMissingObserver.Validate(); err != nil {
+		t.Errorf("missing ObservedBy should not fail validation: %v", err)
 	}
 	if bad.Validate() == nil {
 		t.Error("Validate() must return an error for the malformed bundle")

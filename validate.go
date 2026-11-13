@@ -23,9 +23,8 @@ const (
 	ProblemBadExploitability ProblemKind = "bad_exploitability" // outside [0,1]
 	ProblemDanglingStep      ProblemKind = "dangling_step"      // path step references no edge
 	ProblemEmptyObjective    ProblemKind = "empty_objective"
-	ProblemEmptyValue        ProblemKind = "empty_value"    // a discovery component carries no value
-	ProblemEmptyObserver     ProblemKind = "empty_observer" // a component names no collector
-	ProblemDuplicateRef      ProblemKind = "duplicate_ref"  // two components share a ref
+	ProblemEmptyValue        ProblemKind = "empty_value"   // a discovery component carries no value
+	ProblemDuplicateRef      ProblemKind = "duplicate_ref" // two components share a ref
 )
 
 // Problem is one structural issue found in a record.
@@ -105,11 +104,12 @@ func ValidateSnapshot(s AssessmentSnapshot) []Problem {
 // ValidateDiscoveryBundle checks a DiscoveryBundle for structural soundness and
 // returns every problem it finds (empty when sound). A consumer (e.g. the swarm
 // warm-start seam) runs it before trusting imported discovery:
-//   - every component carries a value and names the collector that observed it;
+//   - every component carries a value (a valueless observation is meaningless);
 //   - component refs, when present, are unique.
 //
-// It does not police the kind vocabulary — producers add component kinds over
-// time, and an unknown kind is forward-compatible, not an error.
+// It gates on structural breakage only — a missing ObservedBy is a provenance
+// nicety, not a parse error — and does not police the kind vocabulary, since
+// producers add component kinds over time (an unknown kind is forward-compatible).
 func ValidateDiscoveryBundle(b DiscoveryBundle) []Problem {
 	var problems []Problem
 	refs := make(map[string]bool, len(b.Components))
@@ -120,9 +120,6 @@ func ValidateDiscoveryBundle(b DiscoveryBundle) []Problem {
 		}
 		if strings.TrimSpace(c.Value) == "" {
 			problems = append(problems, Problem{Kind: ProblemEmptyValue, Ref: where, Detail: "component has an empty value"})
-		}
-		if strings.TrimSpace(c.ObservedBy) == "" {
-			problems = append(problems, Problem{Kind: ProblemEmptyObserver, Ref: where, Detail: "component names no observing collector"})
 		}
 		if c.Ref != "" {
 			if refs[c.Ref] {
